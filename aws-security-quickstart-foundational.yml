@@ -1,0 +1,318 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: AWS Security Quickstart - Foundational
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label: 
+          default: AWS Config
+        Parameters: 
+          - EnableAWSConfigEvaluation
+      - Label:
+          default: Amazon Inspector
+        Parameters:
+          - EnableAmazonInspector
+      - Label:
+          default: AWS Backup
+        Parameters:
+          - EnableAWSBackup
+          - EnableDailyBackup
+          - EnableWeeklyBackup
+
+#----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Parameters:
+  ## AWS Config - Evaluation
+  EnableAWSConfigEvaluation: 
+    AllowedValues: 
+      - "true"
+      - "false"
+    Default: "true"
+    Description: "Enable AWS Config with Managed Rules to assess, audit, and evaluate configurations of your resources."
+    Type: String
+  ## Amazon Inspector
+  EnableAmazonInspector:
+    AllowedValues:
+      - "true"
+      - "false"
+    Default: "true"
+    Description: "Enable Amazon Inspector for vulnerability assessment and network accessibility."
+    Type: String
+  ## AWS Backup
+  EnableAWSBackup:
+    AllowedValues:
+      - "true"
+      - "false"
+    Default: "true"
+    Description: "Enable AWS Backup to backup your common AWS resources."
+    Type: String
+  EnableDailyBackup:
+    AllowedValues:
+      - "true"
+      - "false"
+    Default: "true"
+    Description: "Enable daily backup at 00:00 every night with 35 days retention period for your common AWS resources."
+    Type: String
+  EnableWeeklyBackup:
+    AllowedValues:
+      - "true"
+      - "false"
+    Default: "true"
+    Description: "Enable weekly backup at 00:00 every Sunday night with 1 year retention period for your common AWS resources."
+    Type: String
+
+#----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Conditions: 
+  AWSConfigEvaluationEnabled: !Equals
+    - !Ref EnableAWSConfigEvaluation
+    - "true"
+  AmazonInspectorEnabled: !Equals
+    - !Ref EnableAmazonInspector
+    - "true"
+  AWSBackupEnabled: !Equals
+    - !Ref EnableAWSBackup
+    - "true"
+  DailyBackupEnabled: !Equals
+    - !Ref EnableDailyBackup
+    - "true"
+  WeeklyBackupEnabled: !Equals
+    - !Ref EnableWeeklyBackup
+    - "true"
+
+#----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Resources:
+## AWS Config - Evaluation
+## services evaluated: EBS, RDS and S3
+  ConfigRuleForEncryptedEBSVolumes:
+    Condition: AWSConfigEvaluationEnabled
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: "encrypted-volumes"
+      Scope:
+        ComplianceResourceTypes:
+          - "AWS::EC2::Volume"
+      Source:
+        Owner: "AWS"
+        SourceIdentifier: "ENCRYPTED_VOLUMES"
+  ConfigRuleForEncryptedRDSInstances:
+    Condition: AWSConfigEvaluationEnabled
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: "rds-storage-encrypted"
+      Scope:
+        ComplianceResourceTypes:
+          - "AWS::RDS::DBInstance"
+      Source:
+        Owner: "AWS"
+        SourceIdentifier: "RDS_STORAGE_ENCRYPTED"
+  ConfigRuleForEncryptedS3Buckets:
+    Condition: AWSConfigEvaluationEnabled
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: "s3-default-encryption-kms"
+      Scope:
+        ComplianceResourceTypes:
+          - "AWS::S3::Bucket"
+      Source:
+        Owner: "AWS"
+        SourceIdentifier: "S3_DEFAULT_ENCRYPTION_KMS"
+  ConfigRuleForCommonPorts:
+    Condition: AWSConfigEvaluationEnabled
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: "restricted-common-ports"
+      Scope:
+        ComplianceResourceTypes:
+          - "AWS::EC2::SecurityGroup"
+      Source:
+        Owner: "AWS"
+        SourceIdentifier: "RESTRICTED_INCOMING_TRAFFIC"
+
+## Amazon Inspector
+## Step 1 - Create Lambda role for enabling Amazon Inspector
+  AmazonInspectorEnablementLambdaRole:
+    Condition: AmazonInspectorEnabled
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "lambda.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      Policies:
+        - PolicyName: "AmazonInspectorInlinePolicy"
+          PolicyDocument:
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "inspector2:Disable"
+                  - "inspector2:Enable"
+                Resource: "*"
+        - PolicyName: "IAMInlinePolicy"
+          PolicyDocument:
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "iam:CreateServiceLinkedRole"
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    "iam:AWSServiceName": "inspector2.amazonaws.com"
+      Tags:
+        - Key: "source"
+          Value: "aws-security-quickstart-foundational"
+
+## Step 2 - Create the Lambda function to enable Amazon Inspector
+  AmazonInspectorEnablementLambdaFunction:
+    Condition: AmazonInspectorEnabled
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: |
+          'use strict';
+          const AWS = require('aws-sdk');
+          const inspector2 = new AWS.Inspector2();
+          const response = require('./cfn-response');
+          exports.handler = (event, context, cb) => {
+            
+            const account_id = JSON.stringify(context.invokedFunctionArn).split(':')[4]    
+            
+            console.log('Invoke:', JSON.stringify(event));
+            
+            const done = (err, data) => {
+              if (err) {
+                console.log('Error: ', err);
+                response.send(event, context, response.FAILED, {}, 'CustomResourcePhysicalID');
+              } else {
+                response.send(event, context, response.SUCCESS, {}, 'CustomResourcePhysicalID');
+              }
+            };
+            if ( event.RequestType === 'Delete') {
+              inspector2.disable({accountIds: [account_id], resourceTypes:["EC2", "ECR"]}, done);
+            } else if (event.RequestType === 'Create' || event.RequestType === 'Update') {
+              inspector2.enable({accountIds: [account_id], resourceTypes:["EC2", "ECR"]}, done);
+            } else {
+              cb(new Error('unsupported RequestType: ', event.RequestType));
+              response.send(event, context, response.FAILED, {}, 'CustomResourcePhysicalID');
+            }
+          };
+      Handler: "index.handler"
+      MemorySize: 128
+      Role:
+        Fn::GetAtt:
+          - "AmazonInspectorEnablementLambdaRole"
+          - "Arn"
+      Runtime: "nodejs14.x"
+      Timeout: 120
+      Tags:
+        - Key: "source"
+          Value: "aws-security-quickstart-foundational"
+  
+## Step 3 - Enable Amazon Isnpector with CloudFormation custom resource
+  EnablingAmazonInspector:
+    Condition: AmazonInspectorEnabled
+    Type: "Custom::EnablingAmazonInspector"
+    Properties:
+      ServiceToken: !GetAtt AmazonInspectorEnablementLambdaFunction.Arn
+
+## AWS Backups
+## Step 1 - Create Backup Vaults for Daily and Weekly Backups, using AWS Managed Key for encryption. And create IAM role to be used by AWS Backup.
+  BackupVaultWithDailyBackups:
+    Condition: DailyBackupEnabled
+    Type: AWS::Backup::BackupVault
+    Properties:
+      BackupVaultName: "BackupVaultWithDailyBackups"
+      
+  BackupVaultWithWeeklyBackups:
+    Condition: WeeklyBackupEnabled
+    Type: AWS::Backup::BackupVault
+    Properties:
+      BackupVaultName: "BackupVaultWithWeeklyBackups"
+
+  BackupRole:
+    Condition: AWSBackupEnabled
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "backup.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns: 
+        - "arn:aws:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForBackup"
+      Tags:
+        - Key: "source"
+          Value: "aws-security-quickstart-foundational"
+      
+## Step 2 - Create backup plans
+  BackupPlanWithDailyBackups:
+    Condition: DailyBackupEnabled  
+    Type: AWS::Backup::BackupPlan
+    DependsOn: BackupVaultWithDailyBackups
+    Properties:
+      BackupPlan:
+        BackupPlanName: "BackupPlanWithDailyBackups"
+        BackupPlanRule:
+          - RuleName: "RuleForDailyBackups"
+            TargetBackupVault: !Ref BackupVaultWithDailyBackups
+            ScheduleExpression: "cron(0 16 ? * * *)"
+            Lifecycle:
+              DeleteAfterDays: 35
+      BackupPlanTags:
+              { "source": "aws-security-quickstart-foundational" }
+    
+  BackupPlanWithWeeklyBackups:
+    Condition: WeeklyBackupEnabled
+    Type: AWS::Backup::BackupPlan
+    DependsOn: BackupVaultWithWeeklyBackups      
+    Properties:
+      BackupPlan:
+        BackupPlanName: "BackupPlanWithWeeklyBackups"
+        BackupPlanRule:
+          - RuleName: "RuleForWeeklyBackups"
+            TargetBackupVault: !Ref BackupVaultWithWeeklyBackups
+            ScheduleExpression: "cron(0 16 ? * SAT *)"
+            Lifecycle:
+              DeleteAfterDays: 365
+      BackupPlanTags:
+              { "source": "aws-security-quickstart-foundational" }
+    
+## Step 3 - Tag based backup
+  DailyBackupSelectionByTags:
+    Type: AWS::Backup::BackupSelection
+    DependsOn: BackupPlanWithDailyBackups
+    Properties: 
+      BackupPlanId: !Ref BackupPlanWithDailyBackups
+      BackupSelection: 
+        SelectionName: "daily-backup-selection"
+        IamRoleArn: !GetAtt BackupRole.Arn
+        ListOfTags:
+          - ConditionType: "STRINGEQUALS"
+            ConditionKey: "aws:ResourceTag/backup"
+            ConditionValue: "daily"
+
+  WeeklyBackupSelectionByTags:
+    Type: AWS::Backup::BackupSelection
+    DependsOn: BackupPlanWithWeeklyBackups
+    Properties: 
+      BackupPlanId: !Ref BackupPlanWithWeeklyBackups
+      BackupSelection: 
+        SelectionName: "weekly-backup-selection"
+        IamRoleArn: !GetAtt BackupRole.Arn
+        ListOfTags:
+          - ConditionType: "STRINGEQUALS"
+            ConditionKey: "aws:ResourceTag/backup"
+            ConditionValue: "weekly"
+
+## Systems Manager - Fleet Manager
+
+## Network Segmentations and Multi-AZs
