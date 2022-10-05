@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: AWS Basic Security Quick Starts - Free Tier 
+Description: AWS Basic Security Quick Starts 
 
 Mappings: 
   
@@ -170,6 +170,7 @@ Parameters:
     Default: "true"
     Description: "Turn on account level S3 Block Public Access."
     Type: String
+  #MFA
   EnableMFA: 
     AllowedValues: 
       - "true"
@@ -177,6 +178,8 @@ Parameters:
     Default: "true"
     Description: "Create IAM group with enforce MFA policy attached"
     Type: String 
+
+  #WAF
   EnableWAF: 
     AllowedValues: 
         - "true"
@@ -209,11 +212,14 @@ Conditions:
     WAFEnabled: !Equals 
       - !Ref EnableWAF
       - 'true'
+    MFAEnabled: !Equals 
+      - !Ref EnableMFA
+      - 'true'
 Resources:
   ##IAM access analyzer
   Analyzer:
     Condition: AnalyzerEnabled
-    Type: 'AWS::AccessAnalyzer::Analyzer'
+    Type: AWS::AccessAnalyzer::Analyzer
     Properties:
       AnalyzerName: !Ref AnalyzerName
       Type: ACCOUNT
@@ -294,6 +300,101 @@ Resources:
           - Settings 
           - FrequencyMapGuardDuty 
           - !Ref GuardDutyPublishingFrequency
+  EventRule:
+    Condition: GuardDutyEnabled
+    Type: AWS::Events::Rule
+    Properties:
+      Name: "detect-guardduty-finding"
+      Description: "A CloudWatch Event Rule that triggers on Amazon GuardDuty findings. The Event Rule can be used to trigger notifications or remediative actions using AWS Lambda."
+      State: "ENABLED"
+      Targets:
+        - Arn:
+            Ref: "SnsTopicEventRule"
+          Id: "target-id1"
+          InputTransformer: 
+            InputPathsMap: 
+              "severity": "$.detail.severity"
+              "Finding_ID": "$.detail.id"
+              "instanceId": "$.detail.resource.instanceDetails.instanceId"
+              "port": "$.detail.service.action.networkConnectionAction.localPortDetails.port"
+              "eventFirstSeen": "$.detail.service.eventFirstSeen"
+              "eventLastSeen": "$.detail.service.eventLastSeen"
+              "count": "$.detail.service.count"
+              "Finding_Type": "$.detail.type"
+              "region": "$.region"
+              "Finding_description": "$.detail.description"
+            InputTemplate: |
+              "You have a severity <severity> GuardDuty finding type <Finding_Type> for the EC2 instance <instanceId> in the region <region> as the <Finding_description> on the port <port>. The first attempt was on <eventFirstSeen> and the most recent attempt on <eventLastSeen> . The total occurrence is <count>. For more details open the GuardDuty console at https://console.aws.amazon.com/guardduty/home?region=<region>#/findings?search=id%3D<Finding_ID>"       
+      EventPattern:
+        detail-type:
+          - "GuardDuty Finding"
+        source:
+          - "aws.guardduty"
+        detail:
+          severity: 
+            -  7.0
+            -  7.1
+            -  7.2
+            -  7.3
+            -  7.4
+            -  7.5
+            -  7.6
+            -  7.7
+            -  7.8
+            -  7.9
+            -  8.0
+            -  8.1
+            -  8.2
+            -  8.3
+            -  8.4
+            -  8.5
+            -  8.6
+            -  8.7
+            -  8.8
+            -  8.9
+  SnsTopicEventRule:
+    Condition: GuardDutyEnabled
+    Type: AWS::SNS::Topic
+    Properties:
+      Subscription:
+        - Endpoint: !Ref Email
+          Protocol: "email"
+      TopicName: "GuardDuty"
+  SnsTopicPolicyEventRule:
+    Condition: GuardDutyEnabled
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Sid: "__default_statement_ID"
+            Effect: "Allow"
+            Principal:
+              AWS: "*"
+            Action:
+              - "SNS:GetTopicAttributes"
+              - "SNS:SetTopicAttributes"
+              - "SNS:AddPermission"
+              - "SNS:RemovePermission"
+              - "SNS:DeleteTopic"
+              - "SNS:Subscribe"
+              - "SNS:ListSubscriptionsByTopic"
+              - "SNS:Publish"
+              - "SNS:Receive"
+            Resource:
+              Ref: "SnsTopicEventRule"
+            Condition:
+              StringEquals:
+                AWS:SourceOwner:
+                  Ref: "AWS::AccountId"
+          - Sid: "TrustCWEToPublishEventsToMyTopic"
+            Effect: "Allow"
+            Principal:
+              Service: "events.amazonaws.com"
+            Action: "sns:Publish"
+            Resource:
+              Ref: "SnsTopicEventRule"
+      Topics:
+        - Ref: "SnsTopicEventRule"
       
   ##SecurityHub
   #SecurityHub
@@ -433,55 +534,6 @@ Resources:
 
         
   ##CloudTrail
-  # Create KMS CloudTrail encryption key
-  # cloudtrailKey:
-  #   Condition: CloudTrailEnabled
-  #   Type: AWS::KMS::Key
-  #   Properties:
-  #     KeyPolicy:
-  #       Id: key-cloudtrail
-  #       Statement:
-  #         - Sid: Enable IAM User Permissions
-  #           Effect: Allow
-  #           Principal:
-  #             AWS: !Join
-  #               - ''
-  #               - - 'arn:aws:iam::'
-  #                 - !Ref 'AWS::AccountId'
-  #                 - ':root'
-  #           Action: 'kms:*'
-  #           Resource: '*'
-  #         - Sid: Allow CloudTrail to encrypt logs
-  #           Effect: Allow
-  #           Principal:
-  #             Service:
-  #               - cloudtrail.amazonaws.com
-  #           Action: 'kms:GenerateDataKey*'
-  #           Resource: '*'
-  #           Condition:
-  #             StringLike:
-  #               'kms:EncryptionContext:aws:cloudtrail:arn': !Sub 'arn:aws:cloudtrail:*:${AWS::AccountId}:trail/*'
-  #         - Sid: Allow CloudTrail to describe key
-  #           Effect: Allow
-  #           Principal:
-  #             Service:
-  #               - cloudtrail.amazonaws.com
-  #           Action: 'kms:DescribeKey'
-  #           Resource: '*'
-  #         - Sid: Allow principals in the account to decrypt log files
-  #           Effect: Allow
-  #           Principal:
-  #             AWS: '*'
-  #           Action:
-  #             - 'kms:Decrypt'
-  #             - 'kms:ReEncryptFrom'
-  #           Resource: '*'
-  #           Condition:
-  #             StringEquals:
-  #               'kms:CallerAccount': !Sub '${AWS::AccountId}'
-  #             StringLike:
-  #               'kms:EncryptionContext:aws:cloudtrail:arn': !Sub 'arn:aws:cloudtrail:*:${AWS::AccountId}:trail/*'
-    # Create KMS CloudTrail S3 bucket encryption key
   
   #Create KMS S3 bucket encryption key
   s3cloudtrailKey:
@@ -509,14 +561,6 @@ Resources:
                 - delivery.logs.amazonaws.com
             Action: 'kms:GenerateDataKey*'
             Resource: '*'
-  
-  # cloudtrailKeyAlias:
-  #   Condition: CloudTrailEnabled
-  #   Type: AWS::KMS::Alias
-  #   Properties:
-  #     AliasName: alias/cloudtrail
-  #     TargetKeyId:
-  #       Ref: cloudtrailKey
   
   s3cloudtrailKeyAlias:
     Condition: CloudTrailEnabled
@@ -576,12 +620,10 @@ Resources:
     DependsOn:
       - CloudTrailS3Bucket
       - CloudTrailBucketPolicy
-      # - cloudtrailKey
     Type: AWS::CloudTrail::Trail
     Properties:
       S3BucketName: !Ref CloudTrailS3Bucket
       IsLogging: true
-      # KMSKeyId: !GetAtt cloudtrailKey.Arn
       EnableLogFileValidation: true
       Tags: 
         - Key: Region
@@ -590,10 +632,12 @@ Resources:
 
   ##MFA 
   MFAGroup: 
+    Condition: MFAEnabled
     Type: AWS::IAM::Group
     Properties: 
       GroupName: EnforceMFA 
   MFAPolicy: 
+    Condition: MFAEnabled
     DependsOn:
         - MFAGroup
     Type: AWS::IAM::Policy
@@ -697,12 +741,42 @@ Resources:
     Type: "AWS::Lambda::Function"
     Properties:
       Code:
-        S3Bucket:
-          Fn::Sub:
-            - "asecure-cloud-cf-aux-${Region}"
-            - Region:
-                Ref: "AWS::Region"
-        S3Key: "s3-block-public-access-lambda.zip"
+        ZipFile: |
+          'use strict';
+          const AWS = require('aws-sdk');
+          const response = require('./cfn-response');
+          const s3control = new AWS.S3Control();
+          exports.handler = (event, context, cb) => {
+              
+            const account_id = JSON.stringify(context.invokedFunctionArn).split(':')[4]    
+            console.log('Invoke:', JSON.stringify(event));
+            const done = (err, data) => {
+              if (err) {
+                console.log('Error: ', err);
+                response.send(event, context, response.FAILED, {}, 'CustomResourcePhysicalID');
+              } else {
+                response.send(event, context, response.SUCCESS, {}, 'CustomResourcePhysicalID');
+              }
+            };
+            
+            if ( event.RequestType === 'Delete') {
+              s3control.deletePublicAccessBlock({AccountId: account_id}, done)
+              
+            } else if (event.RequestType === 'Create' || event.RequestType === 'Update') {
+              s3control.putPublicAccessBlock({
+                  AccountId: account_id,
+                  PublicAccessBlockConfiguration:{
+                      BlockPublicAcls: (event.ResourceProperties.BlockPublicAcls === 'true'),
+                      BlockPublicPolicy: (event.ResourceProperties.BlockPublicPolicy=== 'true'),
+                      IgnorePublicAcls: (event.ResourceProperties.IgnorePublicAcls=== 'true'),
+                      RestrictPublicBuckets: (event.ResourceProperties.RestrictPublicBuckets=== 'true')  
+                  }
+                  }, done);
+            } else {
+              cb(new Error('unsupported RequestType: ', event.RequestType));
+              response.send(event, context, response.FAILED, {}, 'CustomResourcePhysicalID');
+            }
+          };
       Handler: "index.handler"
       MemorySize: 128
       Role:
@@ -711,7 +785,6 @@ Resources:
           - "Arn"
       Runtime: "nodejs14.x"
       Timeout: 120
-
 
   AWSWAF: 
     Condition: WAFEnabled
@@ -760,4 +833,4 @@ Resources:
           Statement: 
             ManagedRuleGroupStatement:  
               VendorName: "AWS" 
-              Name: "AWSManagedRulesKnownBadInputsRuleSet"       
+              Name: "AWSManagedRulesKnownBadInputsRuleSet"
