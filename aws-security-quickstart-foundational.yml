@@ -18,6 +18,10 @@ Metadata:
           - EnableAWSBackup
           - EnableDailyBackup
           - EnableWeeklyBackup
+      - Label:
+          default: AWS Systems Manager
+        Parameters:
+          - EnableFleetManager
 
 #----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 Parameters:
@@ -59,6 +63,13 @@ Parameters:
     Default: "true"
     Description: "Enable weekly backup at 00:00 every Sunday night with 1 year retention period for your common AWS resources."
     Type: String
+  EnableFleetManager:
+    AllowedValues:
+      - "true"
+      - "false"
+    Default: "true"
+    Description: "Enable Fleet Manager to manage your nodes."
+    Type: String
 
 #----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 Conditions: 
@@ -76,6 +87,9 @@ Conditions:
     - "true"
   WeeklyBackupEnabled: !Equals
     - !Ref EnableWeeklyBackup
+    - "true"
+  FleetManagerEnabled: !Equals
+    - !Ref EnableFleetManager
     - "true"
 
 #----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -314,5 +328,135 @@ Resources:
             ConditionValue: "weekly"
 
 ## Systems Manager - Fleet Manager
+## Step 1 - Create EC2 instance profile with SSM
+  SecurityQuickStartSSMRoleForInstances:
+    Condition: FleetManagerEnabled
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: "DO-NOT-DELETE-SecurityQuickStartSSMRoleForInstances"
+      Description: "IAM Role created for SSM instance profile"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "ec2.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns: 
+        - "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+        - "arn:aws:iam::aws:policy/AmazonSSMPatchAssociation"
+      Tags: 
+        - Key: "source"
+          Value: "aws-security-quickstart-foundational"
+  
+  SecurityQuickStartSSMInstanceProfile:
+    DependsOn: SecurityQuickStartSSMRoleForInstances
+    Type: AWS::IAM::InstanceProfile
+    Properties: 
+      InstanceProfileName: "SecurityQuickStartInstanceProfile"
+      Roles: 
+        - !Ref SecurityQuickStartSSMRoleForInstances
+
+  EventBridgeIAMRoleTriggerSSM:
+    Condition: FleetManagerEnabled
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: "DO-NOT-DELETE-EventBridgeIAMRoleTriggerSSM"
+      Description: "IAM Role for EventBridge to trigger SSM Automation"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "events.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Policies:
+        - PolicyName: "SecurityQuickStart-EventBridgeExecutionRole"
+          PolicyDocument:
+            Statement:
+              - Effect: "Allow"
+                Action: 
+                  - "ssm:StartAutomationExecution"
+                Resource: 
+                  - !Sub "arn:aws:ssm:*:*:automation-definition/AWS-AttachIAMToInstance:*"
+              - Effect: "Allow"
+                Action:
+                  - "iam:PassRole"
+                Resource: "*"
+      Tags: 
+        - Key: "source"
+          Value: "aws-security-quickstart-foundational"
+    
+  SSMAutomationRoleForInstanceProfileSetup:
+    Condition: FleetManagerEnabled
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: "DO-NOT-DELETE-SSMAutomationRoleForInstanceProfileSetup"
+      Description: "IAM Role for SSM to attach IAM instance profile to EC2"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "ssm.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Policies:
+        - PolicyName: "SecurityQuickStart-InstanceProfileSetupPolicy"
+          PolicyDocument:
+            Statement:
+              - Effect: "Allow"
+                Action: 
+                  - "ec2:DisassociateIamInstanceProfile"
+                  - "ec2:AssociateIamInstanceProfile"
+                  - "ec2:DescribeIamInstanceProfileAssociations"
+                  - "iam:CreateInstanceProfile"
+                  - "iam:ListInstanceProfilesForRole"
+                  - "iam:GetInstanceProfile"
+                  - "iam:AddRoleToInstanceProfile"
+                Resource: "*"
+              - Effect: "Allow"
+                Action:
+                  - "iam:PassRole"
+                Resource: "*"
+      Tags: 
+        - Key: "source"
+          Value: "aws-security-quickstart-foundational"
+
+##Step 2 - Create Eventbridge rule
+  EventBridgeTriggerSSMInstanceProfileSetup:
+    Condition: FleetManagerEnabled
+    Type: AWS::Events::Rule
+    Properties: 
+      Description: "Event rule to trigger SSM instance profile attachment on EC2"
+      Name: "SecurityQuickStart-EventbridgeSetupInstanceProfile"
+      EventBusName: "default"
+      EventPattern:
+        source:
+          - "aws.ec2"
+        detail-type:
+          - "EC2 Instance State-change Notification"
+        detail:
+          state:
+            - "running"
+      State: "ENABLED"
+      Targets: 
+        - Arn: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:automation-definition/AWS-AttachIAMToInstance:$DEFAULT"
+          Id: "1"
+          RoleArn: !GetAtt EventBridgeIAMRoleTriggerSSM.Arn
+          InputTransformer:
+            InputPathsMap:
+                "instance": "$.detail.instance-id"
+            InputTemplate: !Sub
+              - |
+                {
+                  "AutomationAssumeRole": ["${AutomationRole}"],
+                  "RoleName": ["DO-NOT-DELETE-SecurityQuickStartSSMRoleForInstances"],
+                  "ForceReplace": ["false"],
+                  "InstanceId": [<instance>]
+                }
+              -  AutomationRole: !GetAtt SSMAutomationRoleForInstanceProfileSetup.Arn
 
 ## Network Segmentations and Multi-AZs
