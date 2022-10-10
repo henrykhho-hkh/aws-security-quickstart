@@ -22,6 +22,16 @@ Metadata:
           default: AWS Systems Manager
         Parameters:
           - EnableFleetManager
+      - Label:
+          default: Network Segmentations
+        Parameters:
+          - EnableNetworkSegmentation
+          - EnvironmentName
+          - VpcCIDR
+          - PublicSubnet1CIDR
+          - PublicSubnet2CIDR
+          - PrivateSubnet1CIDR
+          - PrivateSubnet2CIDR
 
 #----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 Parameters:
@@ -33,6 +43,7 @@ Parameters:
     Default: "true"
     Description: "Enable AWS Config with Managed Rules to assess, audit, and evaluate configurations of your resources."
     Type: String
+  
   ## Amazon Inspector
   EnableAmazonInspector:
     AllowedValues:
@@ -41,6 +52,7 @@ Parameters:
     Default: "true"
     Description: "Enable Amazon Inspector for vulnerability assessment and network accessibility."
     Type: String
+  
   ## AWS Backup
   EnableAWSBackup:
     AllowedValues:
@@ -63,6 +75,8 @@ Parameters:
     Default: "true"
     Description: "Enable weekly backup at 00:00 every Sunday night with 1 year retention period for your common AWS resources."
     Type: String
+  
+  ## AWS Systems Manager
   EnableFleetManager:
     AllowedValues:
       - "true"
@@ -70,7 +84,39 @@ Parameters:
     Default: "true"
     Description: "Enable Fleet Manager to manage your nodes."
     Type: String
-
+  
+  ## Amazon VPC
+  EnableNetworkSegmentation:
+    AllowedValues:
+      - "true"
+      - "false"
+    Default: "false"
+    Description: "Create network segments in a new Amazon VPC"
+    Type: String
+  EnvironmentName:
+    Description: An environment name that is prefixed to resource names
+    Type: String
+  VpcCIDR:
+    Description: Please enter the IP range (CIDR notation) for this VPC
+    Type: String
+    Default: 10.192.0.0/16
+  PublicSubnet1CIDR:
+    Description: Please enter the IP range (CIDR notation) for the public subnet in the first Availability Zone
+    Type: String
+    Default: 10.192.10.0/24
+  PublicSubnet2CIDR:
+    Description: Please enter the IP range (CIDR notation) for the public subnet in the second Availability Zone
+    Type: String
+    Default: 10.192.11.0/24
+  PrivateSubnet1CIDR:
+    Description: Please enter the IP range (CIDR notation) for the private subnet in the first Availability Zone
+    Type: String
+    Default: 10.192.20.0/24
+  PrivateSubnet2CIDR:
+    Description: Please enter the IP range (CIDR notation) for the private subnet in the second Availability Zone
+    Type: String
+    Default: 10.192.21.0/24
+  
 #----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 Conditions: 
   AWSConfigEvaluationEnabled: !Equals
@@ -91,11 +137,15 @@ Conditions:
   FleetManagerEnabled: !Equals
     - !Ref EnableFleetManager
     - "true"
+  NetworkSegmentEnabled: !Equals
+    - !Ref EnableNetworkSegment
+    - "true"
 
 #----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 Resources:
 ## AWS Config - Evaluation
-## services evaluated: EBS, RDS and S3
+## services evaluated: EC2, EBS, RDS and S3
+## protections evaluated: encryption, backup, managed instances
   ConfigRuleForEncryptedEBSVolumes:
     Condition: AWSConfigEvaluationEnabled
     Type: "AWS::Config::ConfigRule"
@@ -140,6 +190,58 @@ Resources:
       Source:
         Owner: "AWS"
         SourceIdentifier: "RESTRICTED_INCOMING_TRAFFIC"
+  ConfigRuleForFleetManager:
+    Condition: FleetManagerEnabled
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: "ec2-instance-managed-by-systems-manager"
+      Scope:
+        ComplianceResourceTypes:
+          - "AWS::EC2::Instance"
+          - "AWS::SSM::ManagedInstanceInventory"
+      Source:
+        Owner: "AWS"
+        SourceIdentifier: "EC2_INSTANCE_MANAGED_BY_SSM"
+  ConfigRuleForEC2BackupPlan:
+    Condition: AWSBackupEnabled
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: "ec2-resources-protected-by-backup-plan"
+      MaximumExecutionFrequency: "TwentyFour_Hours"
+      InputParameters: { "resourceTags": "backup_enabled" }
+      Source:
+        Owner: "AWS"
+        SourceIdentifier: "EC2_RESOURCES_PROTECTED_BY_BACKUP_PLAN"
+  ConfigRuleForEBSBackupPlan:
+    Condition: AWSBackupEnabled
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: "ebs-resources-protected-by-backup-plan"
+      MaximumExecutionFrequency: "TwentyFour_Hours"
+      InputParameters: { "resourceTags": "backup_enabled" }
+      Source:
+        Owner: "AWS"
+        SourceIdentifier: "EBS_RESOURCES_PROTECTED_BY_BACKUP_PLAN"
+  ConfigRuleForRDSBackupPlan:
+    Condition: AWSBackupEnabled
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: "rds-resources-protected-by-backup-plan"
+      MaximumExecutionFrequency: "TwentyFour_Hours"
+      InputParameters: { "resourceTags": "backup_enabled" }
+      Source:
+        Owner: "AWS"
+        SourceIdentifier: "RDS_RESOURCES_PROTECTED_BY_BACKUP_PLAN"
+  ConfigRuleForS3BackupPlan:
+    Condition: AWSBackupEnabled
+    Type: "AWS::Config::ConfigRule"
+    Properties:
+      ConfigRuleName: "s3-resources-protected-by-backup-plan"
+      MaximumExecutionFrequency: "TwentyFour_Hours"
+      InputParameters: { "resourceTags": "backup_enabled" }
+      Source:
+        Owner: "AWS"
+        SourceIdentifier: "S3_RESOURCES_PROTECTED_BY_BACKUP_PLAN"
 
 ## Amazon Inspector
 ## Step 1 - Create Lambda role for enabling Amazon Inspector
@@ -241,13 +343,11 @@ Resources:
     Type: AWS::Backup::BackupVault
     Properties:
       BackupVaultName: "BackupVaultWithDailyBackups"
-      
   BackupVaultWithWeeklyBackups:
     Condition: WeeklyBackupEnabled
     Type: AWS::Backup::BackupVault
     Properties:
       BackupVaultName: "BackupVaultWithWeeklyBackups"
-
   BackupRole:
     Condition: AWSBackupEnabled
     Type: "AWS::IAM::Role"
@@ -283,7 +383,6 @@ Resources:
               DeleteAfterDays: 35
       BackupPlanTags:
               { "source": "aws-security-quickstart-foundational" }
-    
   BackupPlanWithWeeklyBackups:
     Condition: WeeklyBackupEnabled
     Type: AWS::Backup::BackupPlan
@@ -311,9 +410,11 @@ Resources:
         IamRoleArn: !GetAtt BackupRole.Arn
         ListOfTags:
           - ConditionType: "STRINGEQUALS"
-            ConditionKey: "aws:ResourceTag/backup"
+            ConditionKey: "aws:ResourceTag/backup_enabled"
+            ConditionValue: "yes"
+          - ConditionType: "STRINGEQUALS"
+            ConditionKey: "aws:ResourceTag/backup_frequency"
             ConditionValue: "daily"
-
   WeeklyBackupSelectionByTags:
     Type: AWS::Backup::BackupSelection
     DependsOn: BackupPlanWithWeeklyBackups
@@ -324,7 +425,10 @@ Resources:
         IamRoleArn: !GetAtt BackupRole.Arn
         ListOfTags:
           - ConditionType: "STRINGEQUALS"
-            ConditionKey: "aws:ResourceTag/backup"
+            ConditionKey: "aws:ResourceTag/backup_enabled"
+            ConditionValue: "yes"
+          - ConditionType: "STRINGEQUALS"
+            ConditionKey: "aws:ResourceTag/backup_frequency"
             ConditionValue: "weekly"
 
 ## Systems Manager - Fleet Manager
@@ -349,7 +453,6 @@ Resources:
       Tags: 
         - Key: "source"
           Value: "aws-security-quickstart-foundational"
-  
   SecurityQuickStartSSMInstanceProfile:
     DependsOn: SecurityQuickStartSSMRoleForInstances
     Type: AWS::IAM::InstanceProfile
@@ -357,7 +460,6 @@ Resources:
       InstanceProfileName: "SecurityQuickStartInstanceProfile"
       Roles: 
         - !Ref SecurityQuickStartSSMRoleForInstances
-
   EventBridgeIAMRoleTriggerSSM:
     Condition: FleetManagerEnabled
     Type: AWS::IAM::Role
@@ -388,7 +490,6 @@ Resources:
       Tags: 
         - Key: "source"
           Value: "aws-security-quickstart-foundational"
-    
   SSMAutomationRoleForInstanceProfileSetup:
     Condition: FleetManagerEnabled
     Type: AWS::IAM::Role
@@ -460,3 +561,216 @@ Resources:
               -  AutomationRole: !GetAtt SSMAutomationRoleForInstanceProfileSetup.Arn
 
 ## Network Segmentations and Multi-AZs
+  SegmentedVPC:
+    Type: AWS::EC2::VPC
+    Condition: NetworkSegmentEnabled
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Ref EnvironmentName        
+        - Key: "source"
+          Value: "aws-security-quickstart-foundational"
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    DependsOn: SegmentedVPC
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Ref EnvironmentName
+        - Key: "source"
+          Value: "aws-security-quickstart-foundational"
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    DependsOn: SegmentedVPC
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref SegmentedVPC
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    DependsOn: SegmentedVPC
+    Properties:
+      VpcId: !Ref SegmentedVPC
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      CidrBlock: !Ref PublicSubnet1CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Public Subnet (AZ1)
+        - Key: "source"
+          Value: "aws-security-quickstart-foundational"
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    DependsOn: SegmentedVPC
+    Properties:
+      VpcId: !Ref SegmentedVPC
+      AvailabilityZone: !Select [ 1, !GetAZs  '' ]
+      CidrBlock: !Ref PublicSubnet2CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Public Subnet (AZ2)
+        - Key: "source"
+          Value: "aws-security-quickstart-foundational"
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    DependsOn: SegmentedVPC
+    Properties:
+      VpcId: !Ref SegmentedVPC
+      AvailabilityZone: !Select [ 0, !GetAZs  '' ]
+      CidrBlock: !Ref PrivateSubnet1CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Private Subnet (AZ1)
+        - Key: "source"
+          Value: "aws-security-quickstart-foundational"
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    DependsOn: SegmentedVPC
+    Properties:
+      VpcId: !Ref SegmentedVPC
+      AvailabilityZone: !Select [ 1, !GetAZs  '' ]
+      CidrBlock: !Ref PrivateSubnet2CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Private Subnet (AZ2)
+        - Key: "source"
+          Value: "aws-security-quickstart-foundational"
+  NatGateway1EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+  NatGateway2EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+  NatGateway1:
+    Type: AWS::EC2::NatGateway
+    DependsOn: SegmentedVPC
+    Properties:
+      AllocationId: !GetAtt NatGateway1EIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+  NatGateway2:
+    Type: AWS::EC2::NatGateway
+    DependsOn: SegmentedVPC
+    Properties:
+      AllocationId: !GetAtt NatGateway2EIP.AllocationId
+      SubnetId: !Ref PublicSubnet2
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    DependsOn: SegmentedVPC
+    Properties:
+      VpcId: !Ref SegmentedVPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Public Routes
+        - Key: "source"
+          Value: "aws-security-quickstart-foundational"
+  DefaultPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet2
+  PrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    DependsOn: SegmentedVPC
+    Properties:
+      VpcId: !Ref SegmentedVPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Private Routes (AZ1)
+        - Key: "source"
+          Value: "aws-security-quickstart-foundational"
+  DefaultPrivateRoute1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway1
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable1
+      SubnetId: !Ref PrivateSubnet1
+  PrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    DependsOn: SegmentedVPC
+    Properties:
+      VpcId: !Ref SegmentedVPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName} Private Routes (AZ2)
+        - Key: "source"
+          Value: "aws-security-quickstart-foundational"
+  DefaultPrivateRoute2:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway2
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      SubnetId: !Ref PrivateSubnet2
+  NoIngressSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn: SegmentedVPC
+    Properties:
+      GroupName: "no-ingress-sg"
+      GroupDescription: "Security group with no ingress rule"
+      VpcId: !Ref SegmentedVPC
+
+Outputs:
+  VPC:
+    Description: A reference to the created VPC
+    Value: !Ref SegmentedVPC
+
+  PublicSubnets:
+    Description: A list of the public subnets
+    Value: !Join [ ",", [ !Ref PublicSubnet1, !Ref PublicSubnet2 ]]
+
+  PrivateSubnets:
+    Description: A list of the private subnets
+    Value: !Join [ ",", [ !Ref PrivateSubnet1, !Ref PrivateSubnet2 ]]
+
+  PublicSubnet1:
+    Description: A reference to the public subnet in the 1st Availability Zone
+    Value: !Ref PublicSubnet1
+
+  PublicSubnet2:
+    Description: A reference to the public subnet in the 2nd Availability Zone
+    Value: !Ref PublicSubnet2
+
+  PrivateSubnet1:
+    Description: A reference to the private subnet in the 1st Availability Zone
+    Value: !Ref PrivateSubnet1
+
+  PrivateSubnet2:
+    Description: A reference to the private subnet in the 2nd Availability Zone
+    Value: !Ref PrivateSubnet2
+
+  NoIngressSecurityGroup:
+    Description: Security group with no ingress rule
+    Value: !Ref NoIngressSecurityGroup
+
+
+            
