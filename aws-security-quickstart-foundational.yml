@@ -138,7 +138,7 @@ Conditions:
     - !Ref EnableFleetManager
     - "true"
   NetworkSegmentEnabled: !Equals
-    - !Ref EnableNetworkSegment
+    - !Ref EnableNetworkSegmentation
     - "true"
 
 #----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -570,27 +570,30 @@ Resources:
       EnableDnsHostnames: true
       Tags:
         - Key: Name
-          Value: !Ref EnvironmentName        
+          Value: !Ref EnvironmentName
         - Key: "source"
           Value: "aws-security-quickstart-foundational"
+
   InternetGateway:
     Type: AWS::EC2::InternetGateway
-    DependsOn: SegmentedVPC
+    Condition: NetworkSegmentEnabled
     Properties:
       Tags:
         - Key: Name
           Value: !Ref EnvironmentName
         - Key: "source"
           Value: "aws-security-quickstart-foundational"
+
   InternetGatewayAttachment:
     Type: AWS::EC2::VPCGatewayAttachment
-    DependsOn: SegmentedVPC
+    Condition: NetworkSegmentEnabled
     Properties:
       InternetGatewayId: !Ref InternetGateway
       VpcId: !Ref SegmentedVPC
+
   PublicSubnet1:
     Type: AWS::EC2::Subnet
-    DependsOn: SegmentedVPC
+    Condition: NetworkSegmentEnabled
     Properties:
       VpcId: !Ref SegmentedVPC
       AvailabilityZone: !Select [ 0, !GetAZs '' ]
@@ -601,9 +604,10 @@ Resources:
           Value: !Sub ${EnvironmentName} Public Subnet (AZ1)
         - Key: "source"
           Value: "aws-security-quickstart-foundational"
+
   PublicSubnet2:
     Type: AWS::EC2::Subnet
-    DependsOn: SegmentedVPC
+    Condition: NetworkSegmentEnabled
     Properties:
       VpcId: !Ref SegmentedVPC
       AvailabilityZone: !Select [ 1, !GetAZs  '' ]
@@ -614,9 +618,10 @@ Resources:
           Value: !Sub ${EnvironmentName} Public Subnet (AZ2)
         - Key: "source"
           Value: "aws-security-quickstart-foundational"
+
   PrivateSubnet1:
     Type: AWS::EC2::Subnet
-    DependsOn: SegmentedVPC
+    Condition: NetworkSegmentEnabled
     Properties:
       VpcId: !Ref SegmentedVPC
       AvailabilityZone: !Select [ 0, !GetAZs  '' ]
@@ -627,9 +632,10 @@ Resources:
           Value: !Sub ${EnvironmentName} Private Subnet (AZ1)
         - Key: "source"
           Value: "aws-security-quickstart-foundational"
+
   PrivateSubnet2:
     Type: AWS::EC2::Subnet
-    DependsOn: SegmentedVPC
+    Condition: NetworkSegmentEnabled
     Properties:
       VpcId: !Ref SegmentedVPC
       AvailabilityZone: !Select [ 1, !GetAZs  '' ]
@@ -640,31 +646,38 @@ Resources:
           Value: !Sub ${EnvironmentName} Private Subnet (AZ2)
         - Key: "source"
           Value: "aws-security-quickstart-foundational"
+
   NatGateway1EIP:
     Type: AWS::EC2::EIP
+    Condition: NetworkSegmentEnabled
     DependsOn: InternetGatewayAttachment
     Properties:
       Domain: vpc
+
   NatGateway2EIP:
     Type: AWS::EC2::EIP
+    Condition: NetworkSegmentEnabled
     DependsOn: InternetGatewayAttachment
     Properties:
       Domain: vpc
+
   NatGateway1:
     Type: AWS::EC2::NatGateway
-    DependsOn: SegmentedVPC
+    Condition: NetworkSegmentEnabled
     Properties:
       AllocationId: !GetAtt NatGateway1EIP.AllocationId
       SubnetId: !Ref PublicSubnet1
+
   NatGateway2:
     Type: AWS::EC2::NatGateway
-    DependsOn: SegmentedVPC
+    Condition: NetworkSegmentEnabled
     Properties:
       AllocationId: !GetAtt NatGateway2EIP.AllocationId
       SubnetId: !Ref PublicSubnet2
+
   PublicRouteTable:
     Type: AWS::EC2::RouteTable
-    DependsOn: SegmentedVPC
+    Condition: NetworkSegmentEnabled
     Properties:
       VpcId: !Ref SegmentedVPC
       Tags:
@@ -672,26 +685,34 @@ Resources:
           Value: !Sub ${EnvironmentName} Public Routes
         - Key: "source"
           Value: "aws-security-quickstart-foundational"
+
   DefaultPublicRoute:
     Type: AWS::EC2::Route
+    Condition: NetworkSegmentEnabled
     DependsOn: InternetGatewayAttachment
     Properties:
       RouteTableId: !Ref PublicRouteTable
       DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref InternetGateway
+
   PublicSubnet1RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: NetworkSegmentEnabled
     Properties:
       RouteTableId: !Ref PublicRouteTable
       SubnetId: !Ref PublicSubnet1
+
   PublicSubnet2RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: NetworkSegmentEnabled
     Properties:
       RouteTableId: !Ref PublicRouteTable
       SubnetId: !Ref PublicSubnet2
+
+
   PrivateRouteTable1:
     Type: AWS::EC2::RouteTable
-    DependsOn: SegmentedVPC
+    Condition: NetworkSegmentEnabled
     Properties:
       VpcId: !Ref SegmentedVPC
       Tags:
@@ -699,20 +720,25 @@ Resources:
           Value: !Sub ${EnvironmentName} Private Routes (AZ1)
         - Key: "source"
           Value: "aws-security-quickstart-foundational"
+
   DefaultPrivateRoute1:
     Type: AWS::EC2::Route
+    Condition: NetworkSegmentEnabled
     Properties:
       RouteTableId: !Ref PrivateRouteTable1
       DestinationCidrBlock: 0.0.0.0/0
       NatGatewayId: !Ref NatGateway1
+
   PrivateSubnet1RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: NetworkSegmentEnabled
     Properties:
       RouteTableId: !Ref PrivateRouteTable1
       SubnetId: !Ref PrivateSubnet1
+
   PrivateRouteTable2:
     Type: AWS::EC2::RouteTable
-    DependsOn: SegmentedVPC
+    Condition: NetworkSegmentEnabled
     Properties:
       VpcId: !Ref SegmentedVPC
       Tags:
@@ -720,20 +746,25 @@ Resources:
           Value: !Sub ${EnvironmentName} Private Routes (AZ2)
         - Key: "source"
           Value: "aws-security-quickstart-foundational"
+
   DefaultPrivateRoute2:
     Type: AWS::EC2::Route
+    Condition: NetworkSegmentEnabled
     Properties:
       RouteTableId: !Ref PrivateRouteTable2
       DestinationCidrBlock: 0.0.0.0/0
       NatGatewayId: !Ref NatGateway2
+
   PrivateSubnet2RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: NetworkSegmentEnabled
     Properties:
       RouteTableId: !Ref PrivateRouteTable2
       SubnetId: !Ref PrivateSubnet2
+
   NoIngressSecurityGroup:
     Type: AWS::EC2::SecurityGroup
-    DependsOn: SegmentedVPC
+    Condition: NetworkSegmentEnabled
     Properties:
       GroupName: "no-ingress-sg"
       GroupDescription: "Security group with no ingress rule"
@@ -741,36 +772,41 @@ Resources:
 
 Outputs:
   VPC:
+    Condition: NetworkSegmentEnabled
     Description: A reference to the created VPC
     Value: !Ref SegmentedVPC
 
   PublicSubnets:
+    Condition: NetworkSegmentEnabled
     Description: A list of the public subnets
     Value: !Join [ ",", [ !Ref PublicSubnet1, !Ref PublicSubnet2 ]]
 
   PrivateSubnets:
+    Condition: NetworkSegmentEnabled
     Description: A list of the private subnets
     Value: !Join [ ",", [ !Ref PrivateSubnet1, !Ref PrivateSubnet2 ]]
 
   PublicSubnet1:
+    Condition: NetworkSegmentEnabled
     Description: A reference to the public subnet in the 1st Availability Zone
     Value: !Ref PublicSubnet1
 
   PublicSubnet2:
+    Condition: NetworkSegmentEnabled
     Description: A reference to the public subnet in the 2nd Availability Zone
     Value: !Ref PublicSubnet2
 
   PrivateSubnet1:
+    Condition: NetworkSegmentEnabled
     Description: A reference to the private subnet in the 1st Availability Zone
     Value: !Ref PrivateSubnet1
 
   PrivateSubnet2:
+    Condition: NetworkSegmentEnabled
     Description: A reference to the private subnet in the 2nd Availability Zone
     Value: !Ref PrivateSubnet2
 
   NoIngressSecurityGroup:
+    Condition: NetworkSegmentEnabled
     Description: Security group with no ingress rule
     Value: !Ref NoIngressSecurityGroup
-
-
-            
