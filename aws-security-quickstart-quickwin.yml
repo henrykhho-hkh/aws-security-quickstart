@@ -695,8 +695,7 @@ Resources:
           
       Groups: 
         - EnforceMFA 
-
-
+        
   ##S3 Block Public Access
   S3BlockPublicAccess:
       Condition: S3BlockPublicAccessEnabled
