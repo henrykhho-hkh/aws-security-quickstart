@@ -1,5 +1,6 @@
 # aws-security-quickstart
 
+<<<<<<< HEAD
 
 
 # Security Quick Start Guide - Foundational
@@ -140,3 +141,6 @@ Using the AWS Command Line Interface
 Determine whether the AWS Command Line Interface (AWS CLI) is available in your environment. For installation instructions, refer to What Is the AWS Command Line Interface (https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-welcome.html) in the AWS CLI User Guide. After confirming that the AWS CLI is available, run the following commands. Replace your-stack-name with the name of your CloudFormation stack. 
  
 $ aws cloudformation delete-stack —stack-name your-stack-name
+=======
+## test
+>>>>>>> 687471bd4c117cf68d3ab4baf526484e9f3c6bdf
