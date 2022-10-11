@@ -1,8 +1,3 @@
-# aws-security-quickstart
-
-<<<<<<< HEAD
-
-
 # Security Quick Start Guide - Foundational
 
 ## Overview
