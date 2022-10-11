@@ -1,3 +1,0 @@
-# aws-security-quickstart
-
-## test
