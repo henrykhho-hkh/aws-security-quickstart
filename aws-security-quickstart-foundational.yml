@@ -33,7 +33,6 @@ Metadata:
           - PrivateSubnet1CIDR
           - PrivateSubnet2CIDR
 
-#----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 Parameters:
   ## AWS Config - Evaluation
   EnableAWSConfigEvaluation: 
@@ -91,9 +90,10 @@ Parameters:
       - "true"
       - "false"
     Default: "false"
-    Description: "Create network segments in a new Amazon VPC"
+    Description: "Create network segments in a new Amazon VPC."
     Type: String
   EnvironmentName:
+    Default: "AWS-SecurityQuickStart-VPC"
     Description: An environment name that is prefixed to resource names
     Type: String
   VpcCIDR:
@@ -117,7 +117,6 @@ Parameters:
     Type: String
     Default: 10.192.21.0/24
   
-#----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 Conditions: 
   AWSConfigEvaluationEnabled: !Equals
     - !Ref EnableAWSConfigEvaluation
@@ -141,7 +140,6 @@ Conditions:
     - !Ref EnableNetworkSegmentation
     - "true"
 
-#----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 Resources:
 ## AWS Config - Evaluation
 ## services evaluated: EC2, EBS, RDS and S3
