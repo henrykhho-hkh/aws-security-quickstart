@@ -19,7 +19,7 @@ Metadata:
           - EnableDailyBackup
           - EnableWeeklyBackup
       - Label:
-          default: AWS Systems Manager
+          default: AWS Systems Manager - Fleet Manager
         Parameters:
           - EnableFleetManager
       - Label:
@@ -75,7 +75,7 @@ Parameters:
     Description: "Enable weekly backup at 00:00 every Sunday night with 1 year retention period for your common AWS resources."
     Type: String
   
-  ## AWS Systems Manager
+  ## AWS Systems Manager - Fleet Manager
   EnableFleetManager:
     AllowedValues:
       - "true"
@@ -83,7 +83,16 @@ Parameters:
     Default: "true"
     Description: "Enable Fleet Manager to manage your nodes."
     Type: String
-  
+
+  ## AWS Systems Manager - Patch Manager
+  EnableFleetManager:
+    AllowedValues:
+      - "true"
+      - "false"
+    Default: "true"
+    Description: "Enable Patch Manager to patch your nodes."
+    Type: String 
+
   ## Amazon VPC
   EnableNetworkSegmentation:
     AllowedValues:
