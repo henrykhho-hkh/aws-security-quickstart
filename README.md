@@ -97,6 +97,10 @@ You are responsible for the cost of the AWS services used to run this solution. 
 *Cost per month for a small to medium organization:* 
 As of Oct 2022, the cost for running this solution, with default settings in the Asia Pacific (Singapore) Region is approximately *$1,002/month*. A detailed breakdown of this cost estimate is provided in the following tables.
 
+## Prerequisite
+
+You must deploy the template "aws-security-quickstart-quickwin" before deploying this template.
+
 ## Assumptions:
 
 * Assume there is no restore request for AWS Backup
