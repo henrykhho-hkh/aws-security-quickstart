@@ -24,8 +24,6 @@ Insert diagram here
 5. *AWS Systems Manager*
     1. features covered: 
         1. Fleet Manager, using EventBridge to trigger Systems Manager Automation
-6. *Infrastructure security and resiliency.*
-    1. VPC with multi-AZs and network segmentation
 
 ## Automated deployment
 
@@ -49,13 +47,6 @@ Before launching this solution, review the services provisioned, configurations 
 |EnableDailyBackup|TRUE|Enable daily backup at 00:00 every night with 35 days retention period for your common AWS resources.|
 |EnableWeeklyBackup|TRUE|Enable weekly backup at 00:00 every Sunday night with 1 year retention period for your common AWS resources.|
 |EnableFleetManager|TRUE|Enable Fleet Manager to manage your EC2 nodes.|
-|EnableNetworkSegmentation|FALSE|Create network segments in a new Amazon VPC.|
-|EnvironmentName|AWS-SecurityQuickStart-VPC|An environment name that is prefixed to resource names|
-|VpcCIDR|10.192.0.0/16|CIDR range of the VPC.|
-|PublicSubnet1CIDR|10.192.10.0/24|CIDR range for the public subnet in the first Availability Zone.|
-|PublicSubnet2CIDR|10.192.11.0/24|CIDR range for the public subnet in the second Availability Zone.|
-|PrivateSubnet1CIDR|10.192.20.0/24|CIDR range for the private subnet in the first Availability Zone.|
-|PrivateSubnet2CIDR|10.192.21.0/24|CIDR range for the private subnet in the second Availability Zone.|
 
 1. Choose *Next.*
 2. On the *Configure stack options* page, choose *Next.*
@@ -102,7 +93,6 @@ You are responsible for the cost of the AWS services used to run this solution. 
 |AWS EventBridge|--|Refer to Pricing - AWS EventBridge - Amazon Web Services (AWS) (https://aws.amazon.com/eventbridge/pricing/?did=ap_card&trk=ap_card) for pricing of Amazon EventBridge|
 |AWS Lambda|1 million free requests per month|Refer to Pricing - AWS Lambda - Amazon Web Services (AWS) (https://aws.amazon.com/lambda/pricing/?did=ap_card&trk=ap_card) for pricing of AWS Lambda beyond the free tier|
 |AWS Backup|--|Refer to Pricing - AWS Backup - Amazon Web Services (AWS) (https://aws.amazon.com/config/pricing/?did=ap_card&trk=ap_card) for pricing of AWS Backup|
-|AWS VPC|--|Refer to Pricing - AWS VPC - Amazon Web Services (AWS) (https://aws.amazon.com/vpc/pricing/?did=ap_card&trk=ap_card) for pricing of AWS Backup|
 
 *Cost per month for a small to medium organization:* 
 As of Oct 2022, the cost for running this solution, with default settings in the Asia Pacific (Singapore) Region is approximately *$1,002/month*. A detailed breakdown of this cost estimate is provided in the following tables.
@@ -118,9 +108,7 @@ As of Oct 2022, the cost for running this solution, with default settings in the
 |AWS Backup|EBS volume snapshot|GB-month|3,000|$0.050|$150|
 ||RDS database snapshot|GB-month|5,000|$0.095|$475|
 ||S3 backup|GB-month|2,000|$0.060|$120|
-|AWS VPC|NAT Gateway|Number of gateways|2|$0.059|$0.12|
-||Data processed|GB-month|3,000|$0.059|$177|
-|Total|||||$1,002|
+|Total|||||$825|
 					
 *Note: Other AWS services include AWS Lambda and Amazon EventBridge is priced at the free tier
 
